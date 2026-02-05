@@ -1,0 +1,117 @@
+---
+title: 'Claude Code Danger Mode Shortcut (cc)'
+date: '2026-02-04'
+tags: ['claude code']
+draft: true
+summary: 'How to set up a cc shortcut that launches Claude Code with --dangerously-skip-permissions on Windows -- Git Bash and CMD.'
+images: ['/static/images/claude-code-danger-mode-shortcut/banner.png']
+layout: PostSimple
+authors: ['default']
+---
+
+If you use Claude Code regularly, you have probably typed `claude --dangerously-skip-permissions` more times than you care to admit. That flag bypasses all interactive permission prompts -- file edits, bash commands, everything -- so Claude Code can operate autonomously without stopping to ask you for approval on every action.
+
+Typing it out every time is tedious. This post shows how to create a two-character shortcut, `cc`, that does it for you in Git Bash and CMD on Windows.
+
+```
+cc  →  claude --dangerously-skip-permissions
+```
+
+Any extra arguments pass through seamlessly. For example, `cc --model opus` expands to `claude --dangerously-skip-permissions --model opus`.
+
+## Git Bash
+
+Git Bash is the simplest. You add a standard bash alias to your `~/.bashrc` file.
+
+**File:** `~/.bashrc` (typically `C:\Users\<user>\.bashrc`)
+
+```bash
+alias cc='claude --dangerously-skip-permissions'
+```
+
+Git Bash loads `~/.bashrc` automatically on startup. If you want to apply the change to your current session without restarting, run:
+
+```bash
+source ~/.bashrc
+```
+
+That is it for Git Bash -- one line, no caveats.
+
+## CMD (Command Prompt)
+
+CMD does not have aliases or profile scripts built in. Instead, you use a DOSKEY macro file combined with a registry key that loads it automatically every time `cmd.exe` starts.
+
+### Part 1: Create the Macro File
+
+Create a file at a path like `C:\Users\<user>\cmd-aliases.doskey` with this content:
+
+```
+cc=claude --dangerously-skip-permissions $*
+```
+
+The `$*` token passes all extra arguments through to the command, just like `$@` in bash.
+
+### Part 2: Set the AutoRun Registry Key
+
+Windows lets you configure a command that runs every time `cmd.exe` starts via a registry key. You point it at your DOSKEY macro file.
+
+**Registry location:**
+
+```
+Key:   HKEY_CURRENT_USER\Software\Microsoft\Command Processor
+Name:  AutoRun
+Type:  REG_SZ
+Value: doskey /macrofile=C:\Users\<user>\cmd-aliases.doskey
+```
+
+You can set this through Registry Editor (`regedit`):
+
+1. Navigate to `HKEY_CURRENT_USER\Software\Microsoft\Command Processor`
+2. Create the key if it does not exist
+3. Add a new String Value named `AutoRun`
+4. Set its value to `doskey /macrofile=C:\Users\<user>\cmd-aliases.doskey`
+
+Replace `<user>` with your actual Windows username in all paths above.
+
+### CMD Caveats
+
+There are two things worth knowing about this approach:
+
+- **DOSKEY macros only work in interactive cmd.exe sessions.** They do not work inside batch scripts (`.bat` / `.cmd` files). If you need `cc` inside a script, you would need to write the full command.
+- **The AutoRun command executes for any process that spawns cmd.exe.** Build tools, VS Code tasks, and other programs that use cmd.exe under the hood will also run the DOSKEY load command. This is generally harmless since it just loads macro definitions, but it is worth being aware of.
+
+## Adding More Aliases
+
+Once you have the infrastructure in place, adding more shortcuts is trivial. Here is an example adding a `cchat` shortcut that launches plain Claude Code without the danger mode flag.
+
+### Git Bash (`~/.bashrc`)
+
+```bash
+alias cc='claude --dangerously-skip-permissions'
+alias cchat='claude'
+```
+
+### CMD (`cmd-aliases.doskey`)
+
+```
+cc=claude --dangerously-skip-permissions $*
+cchat=claude $*
+```
+
+## Verification
+
+After setting up any of the above, open a **new** terminal window. Each shell loads its configuration on startup, so changes will not take effect in an already-open session.
+
+Then run:
+
+```
+cc --version
+```
+
+You should see the Claude Code version number printed without any permission prompts. If you see an error like "cc is not recognized" or "command not found", double-check that your configuration file is saved in the correct location and that you opened a fresh terminal.
+
+## Conclusion
+
+A two-character shortcut shaves seconds off every Claude Code invocation, but those seconds compound fast when you are launching it dozens of times a day. The setup is a one-time effort per shell -- a single line in Git Bash or a DOSKEY macro plus registry key in CMD.
+
+With `cc` in place, spinning up a fully autonomous Claude Code session is as fast as it gets.

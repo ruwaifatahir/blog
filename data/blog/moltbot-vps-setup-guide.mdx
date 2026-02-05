@@ -1,0 +1,281 @@
+---
+title: 'OpenClaw (Moltbot) VPS Setup Guide'
+date: '2026-02-05'
+tags: ['moltbot', 'openclaw']
+draft: true
+summary: 'Deploy OpenClaw on any VPS using CapRover with Telegram integration and your choice of LLM provider, from a fresh Ubuntu server to a working bot.'
+images: ['/static/images/moltbot-vps-setup-guide/banner.png']
+layout: PostSimple
+authors: ['default']
+---
+
+[OpenClaw](https://openclaw.ai) (formerly Moltbot, formerly Clawdbot) is an open-source personal AI assistant that connects to messaging platforms like Telegram, WhatsApp, and Discord. This guide covers every step from a blank Ubuntu server to a working OpenClaw instance that responds to your Telegram messages, deployed through CapRover with any LLM provider you choose.
+
+## Prerequisites
+
+Before starting, make sure you have these ready:
+
+- **A VPS** running Ubuntu 22.04 with at least 2 vCPU, 4GB RAM, and 25GB disk
+- **An API key** for your chosen LLM provider (see the [Model Providers](#model-providers) section for the full list)
+- **A Telegram bot token** from [@BotFather](https://t.me/BotFather) on Telegram
+- **Your Telegram user ID** from [@userinfobot](https://t.me/userinfobot) on Telegram (this is a numeric ID, not your username)
+
+## What You'll Set Up
+
+- CapRover as the deployment platform (handles Docker, app management, and logs)
+- OpenClaw running as a CapRover app with persistent config and data
+- Telegram as the chat channel with DM pairing
+- Your choice of LLM (Gemini, Claude, GPT, open-source models, etc.)
+
+## Step 1: SSH into the Server
+
+Connect to your VPS as root:
+
+```bash
+ssh root@SERVER_IP
+```
+
+Replace `SERVER_IP` with your server's actual IP address.
+
+## Step 2: Install Docker and CapRover
+
+Update the system and install Docker:
+
+```bash
+apt update && apt upgrade -y
+curl -fsSL https://get.docker.com | sh
+```
+
+If UFW is active on your server, open the ports CapRover needs:
+
+```bash
+ufw allow 80,443,3000,996,7946,4789,2377/tcp
+ufw allow 7946,4789,2377/udp
+```
+
+CapRover is a self-hosted PaaS that manages Docker containers through a web dashboard. With Docker installed, run:
+
+```bash
+docker run -p 80:80 -p 443:443 -p 3000:3000 -e ACCEPTED_TERMS=true -v /var/run/docker.sock:/var/run/docker.sock -v /captain:/captain caprover/caprover
+```
+
+Wait until you see `Captain is initialized` in the output. Then open `http://SERVER_IP:3000` in your browser and log in with the default password `captain42`.
+
+
+## Step 3: Create the App
+
+In the CapRover dashboard:
+
+1. Go to **Apps**
+2. Enter `openclaw` as the app name
+3. Check **Has Persistent Data**
+4. Click **Create**
+
+The persistent data checkbox is critical. Without it, your config and data are wiped on every redeployment.
+
+## Step 4: Configure the App
+
+Open the `openclaw` app in CapRover and configure the following across two tabs.
+
+### HTTP Settings Tab
+
+Change the **Container HTTP Port** from `80` to `18789`. This is the port OpenClaw's gateway listens on.
+
+Enable **WebSocket Support**. OpenClaw's gateway uses WebSocket connections, and they will fail silently without this.
+
+### App Configs Tab
+
+**Environment Variables.** Add the following. The first variable depends on your LLM provider (see [Model Providers](#model-providers) for the full list):
+
+| Variable | Value |
+|----------|-------|
+| Your provider's API key variable | Your API key (e.g. `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) |
+| `TELEGRAM_BOT_TOKEN` | Your bot token from BotFather |
+| `OPENCLAW_GATEWAY_TOKEN` | Generate one with `openssl rand -hex 32` on your server |
+
+For the gateway token, SSH into your server and run `openssl rand -hex 32`. Copy the output and paste it as the value. This token secures the gateway's WebSocket API and is also used to access the dashboard in [Step 8](#step-8-access-the-dashboard).
+
+**Persistent Directories.** Add two entries:
+
+| Path in App | Label |
+|-------------|-------|
+| `/home/node/.openclaw` | `openclaw-config` |
+| `/home/node/.openclaw/workspace` | `openclaw-workspace` |
+
+The first directory holds `openclaw.json` (the main configuration file) and credentials. The second holds workspace data like memory and agent files. Both survive redeployments.
+
+**Port Mapping.** Add one entry so the gateway port is accessible directly on the server:
+
+| Server Port | Container Port |
+|-------------|----------------|
+| `18789` | `18789` |
+
+**Service Update Override.** Paste this JSON:
+
+```json
+{
+  "TaskTemplate": {
+    "ContainerSpec": {
+      "Command": ["node", "dist/index.js"],
+      "Args": ["gateway", "--bind", "lan"]
+    }
+  }
+}
+```
+
+This tells CapRover exactly how to start the OpenClaw process. Without it, the container may fail with "too many arguments for gateway" because CapRover's default entrypoint handling does not match what OpenClaw expects.
+
+Click **Save & Update** after each change.
+
+## Step 5: Write the Configuration File
+
+SSH into your server and write the `openclaw.json` config directly to the Docker volume. This example uses Gemini, but you can substitute any model from the [Model Providers](#model-providers) section:
+
+```bash
+cat > /var/lib/docker/volumes/captain--openclaw-config/_data/openclaw.json << 'EOF'
+{
+  "gateway": {
+    "mode": "local",
+    "trustedProxies": ["10.0.0.0/8", "172.16.0.0/12"],
+    "controlUi": {
+      "allowInsecureAuth": true
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "google/gemini-2.5-flash"
+      },
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
+      }
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "dmPolicy": "pairing",
+      "allowFrom": ["YOUR_TELEGRAM_USER_ID"],
+      "groupPolicy": "allowlist"
+    }
+  },
+  "plugins": {
+    "entries": {
+      "telegram": {
+        "enabled": true
+      }
+    }
+  }
+}
+EOF
+```
+
+Replace `YOUR_TELEGRAM_USER_ID` with the numeric ID you got from @userinfobot. This restricts the bot to only respond to your messages.
+
+### Key Config Decisions
+
+- **`mode: "local"`** runs the gateway in single-node mode. This is the right choice for a VPS deployment.
+- **`trustedProxies`** tells the gateway which IP ranges to trust for `X-Forwarded-For` headers. CapRover's nginx proxy runs on Docker Swarm's overlay network, which uses addresses in the `10.0.0.0/8` and `172.16.0.0/12` ranges. This is needed so the gateway can correctly identify client IPs behind the proxy. The [official docs](https://docs.openclaw.ai/gateway/security) recommend being as specific as possible, but Docker Swarm assigns overlay IPs dynamically, so these two ranges are the practical minimum for CapRover.
+- **`dmPolicy: "pairing"`** means the bot responds to direct messages from allowed users and establishes a persistent session.
+- **`groupPolicy: "allowlist"`** means the bot will not respond in any Telegram groups unless you explicitly allow them.
+- **`controlUi.allowInsecureAuth`** allows the dashboard to work over plain HTTP. Without this, the Control UI requires HTTPS or localhost access. This is a security trade-off for convenience. If you later set up a domain with HTTPS, you can remove this setting.
+
+### Set File Ownership
+
+OpenClaw runs as user `node` (UID 1000) inside the container. The volume files need matching ownership:
+
+```bash
+chown -R 1000:1000 /var/lib/docker/volumes/captain--openclaw-config/_data/
+chown -R 1000:1000 /var/lib/docker/volumes/captain--openclaw-workspace/_data/
+```
+
+Verify the config was written correctly:
+
+```bash
+cat /var/lib/docker/volumes/captain--openclaw-config/_data/openclaw.json
+```
+
+This should print back the JSON you just wrote.
+
+## Step 6: Deploy
+
+Go to the **Deployment** tab of the `openclaw` app in CapRover. Paste the following captain-definition and click **Deploy**:
+
+```json
+{
+  "schemaVersion": 2,
+  "dockerfileLines": ["FROM ghcr.io/openclaw/openclaw:latest"]
+}
+```
+
+This pulls the latest OpenClaw image from GitHub Container Registry and deploys it.
+
+## Step 7: Verify
+
+Check the app logs in CapRover. A successful startup looks like this:
+
+```
+[gateway] listening on ws://0.0.0.0:18789
+[telegram] starting provider (@yourbotname)
+```
+
+The first line confirms the gateway is running. The second confirms Telegram integration is active with your bot. Open Telegram and send a message to your bot. It should respond.
+
+## Step 8: Access the Dashboard
+
+OpenClaw includes a web dashboard for managing config, channels, agents, and sessions. Open it at:
+
+```
+http://SERVER_IP:18789?token=YOUR_GATEWAY_TOKEN
+```
+
+Replace `SERVER_IP` with your server's IP and `YOUR_GATEWAY_TOKEN` with the token you set in the `OPENCLAW_GATEWAY_TOKEN` environment variable.
+
+## Model Providers
+
+OpenClaw is model-agnostic. To switch providers, change the `agents.defaults.model.primary` value in `openclaw.json` and set the corresponding API key as an environment variable in CapRover. The pattern is always `provider/model-id`.
+
+| Provider | Environment Variable | Example Model |
+|----------|---------------------|---------------|
+| Google Gemini | `GEMINI_API_KEY` | `google/gemini-2.5-flash` |
+| Anthropic | `ANTHROPIC_API_KEY` | `anthropic/claude-opus-4-5` |
+| OpenAI | `OPENAI_API_KEY` | `openai/gpt-5.2` |
+| OpenRouter | `OPENROUTER_API_KEY` | `openrouter/anthropic/claude-sonnet-4-5` |
+| Groq | `GROQ_API_KEY` | `groq/llama-3.3-70b` |
+| Mistral | `MISTRAL_API_KEY` | `mistral/mistral-large-latest` |
+| xAI | `XAI_API_KEY` | `xai/grok-3` |
+| Cerebras | `CEREBRAS_API_KEY` | `cerebras/llama3.1-70b` |
+| Z.AI (GLM) | `ZAI_API_KEY` | `zai/glm-4.7` |
+
+OpenRouter is worth noting separately: it gives access to 300+ models through a single API key, so you can switch between providers without managing multiple keys.
+
+OpenClaw also supports Ollama, Amazon Bedrock, LM Studio, vLLM, LiteLLM, and any OpenAI-compatible endpoint through the `models.providers` config block. See the [OpenClaw Model Providers documentation](https://docs.openclaw.ai/concepts/model-providers) for setup instructions on those.
+
+## Updating the Configuration
+
+Config changes do not require a redeployment. Edit the configuration from the **Config** page in the OpenClaw dashboard. Changes are picked up automatically.
+
+## Updating OpenClaw
+
+To pull the latest version, redeploy the same captain-definition from the Deployment tab:
+
+```json
+{
+  "schemaVersion": 2,
+  "dockerfileLines": ["FROM ghcr.io/openclaw/openclaw:latest"]
+}
+```
+
+Your config and data are stored on persistent volumes, so nothing is lost during redeployment.
+
+## Conclusion
+
+That is the complete setup: CapRover as the platform, a single JSON config file, a few environment variables, and one Docker image. Config changes can be made through the dashboard with no redeployment needed. Version updates are a one-click redeploy that preserves all your data.
+
+From here, you can swap models, add group chat support, or extend with browser automation (covered in a separate guide).
+
+## Further Reading
+
+- [OpenClaw Model Providers](https://docs.openclaw.ai/concepts/model-providers) for Ollama, Bedrock, and custom endpoint configurations not covered in this guide
+- [OpenClaw Gateway Security](https://docs.openclaw.ai/gateway/security) for auth modes, bind options, Tailscale integration, and hardening your deployment
