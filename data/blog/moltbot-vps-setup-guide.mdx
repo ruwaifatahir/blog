@@ -3,12 +3,12 @@ title: 'OpenClaw (Moltbot) VPS Setup Guide'
 date: '2026-02-05'
 tags: ['moltbot', 'openclaw']
 draft: false
-summary: 'Deploy OpenClaw on any VPS using CapRover with Telegram integration and your choice of LLM provider, from a fresh Ubuntu server to a working bot.'
+summary: 'Deploy OpenClaw, an open-source AI assistant supporting WhatsApp, Telegram, Discord, Slack, and 10+ other platforms, on any VPS with your choice of LLM provider. From a fresh Ubuntu server to a working instance.'
 layout: PostSimple
 authors: ['default']
 ---
 
-[OpenClaw](https://openclaw.ai) (formerly Moltbot, formerly Clawdbot) is an open-source personal AI assistant that connects to messaging platforms like Telegram, WhatsApp, and Discord. This guide covers every step from a blank Ubuntu server to a working OpenClaw instance that responds to your Telegram messages, deployed through CapRover with any LLM provider you choose.
+[OpenClaw](https://openclaw.ai) (formerly Moltbot, formerly Clawdbot) is an open-source personal AI assistant that works across WhatsApp, Telegram, Discord, Slack, Signal, iMessage, Microsoft Teams, Google Chat, and a built-in WebChat interface. This guide covers every step from a fresh Ubuntu server to a working OpenClaw instance, using Telegram as the example channel with your choice of LLM provider.
 
 ## Prerequisites
 
@@ -23,7 +23,7 @@ Before starting, make sure you have these ready:
 
 - CapRover as the deployment platform (handles Docker, app management, and logs)
 - OpenClaw running as a CapRover app with persistent config and data
-- Telegram as the chat channel with DM pairing
+- Telegram as the chat channel restricted to the user IDs you allow
 - Your choice of LLM (Gemini, Claude, GPT, open-source models, etc.)
 
 ## Step 1: SSH into the Server
@@ -154,7 +154,7 @@ cat > /var/lib/docker/volumes/captain--openclaw-config/_data/openclaw.json << 'E
   "channels": {
     "telegram": {
       "enabled": true,
-      "dmPolicy": "pairing",
+      "dmPolicy": "allowlist",
       "allowFrom": ["YOUR_TELEGRAM_USER_ID"],
       "groupPolicy": "allowlist"
     }
@@ -175,8 +175,8 @@ Replace `YOUR_TELEGRAM_USER_ID` with the numeric ID you got from @userinfobot. T
 ### Key Config Decisions
 
 - **`mode: "local"`** runs the gateway in single-node mode. This is the right choice for a VPS deployment.
-- **`trustedProxies`** tells the gateway which IP ranges to trust for `X-Forwarded-For` headers. CapRover's nginx proxy runs on Docker Swarm's overlay network, which uses addresses in the `10.0.0.0/8` and `172.16.0.0/12` ranges. This is needed so the gateway can correctly identify client IPs behind the proxy. The [official docs](https://docs.openclaw.ai/gateway/security) recommend being as specific as possible, but Docker Swarm assigns overlay IPs dynamically, so these two ranges are the practical minimum for CapRover.
-- **`dmPolicy: "pairing"`** means the bot responds to direct messages from allowed users and establishes a persistent session.
+- **`trustedProxies`** tells the gateway which IP ranges to trust for `X-Forwarded-For` headers so it can correctly identify client IPs behind CapRover's nginx proxy. Docker Swarm's default overlay pool is `10.0.0.0/8`, and bridge/ingress networks use the `172.16.0.0/12` range. The [official docs](https://docs.openclaw.ai/gateway/security) recommend being as specific as possible, but since Docker Swarm assigns these IPs dynamically, both ranges are included here to cover CapRover's internal networking.
+- **`dmPolicy: "allowlist"`** means only user IDs listed in `allowFrom` can DM the bot. Everyone else is blocked.
 - **`groupPolicy: "allowlist"`** means the bot will not respond in any Telegram groups unless you explicitly allow them.
 - **`controlUi.allowInsecureAuth`** allows the dashboard to work over plain HTTP. Without this, the Control UI requires HTTPS or localhost access. This is a security trade-off for convenience. If you later set up a domain with HTTPS, you can remove this setting.
 
