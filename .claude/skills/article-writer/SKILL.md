@@ -21,16 +21,20 @@ Ask the user for each of these, one at a time:
    - **Case study** — real-world project or problem walkthrough
    - **Comparison** — evaluating tools, approaches, or technologies
 3. **Target audience level** — beginner, intermediate, or advanced. This determines tone, depth, and how much you explain.
-4. **Key technologies** — languages, frameworks, tools involved
-5. **Core promise** — what will the reader walk away knowing or having built? Must be specific. Reject vague answers like "learn about X" — push for "build a working X that does Y" or "understand exactly how X works under the hood so you can debug Z."
-6. **Tags** — check existing tags first by reading `data/tag-data.json`. Suggest relevant ones and let the user pick or create new ones.
-7. **Layout** — `PostLayout` (default, author sidebar), `PostSimple` (minimal), or `PostBanner` (hero image). Briefly explain each.
+4. **Target platform** — what OS or environment is this for? (e.g., Windows, Linux, macOS, cross-platform). This determines which commands, tools, and platform-specific details to include and which to exclude.
+5. **Key technologies** — languages, frameworks, tools involved
+6. **Core promise** — what will the reader walk away knowing or having built? Must be specific. Reject vague answers like "learn about X" — push for "build a working X that does Y" or "understand exactly how X works under the hood so you can debug Z."
+7. **Tags** — check existing tags first by reading `data/tag-data.json`. Suggest relevant ones and let the user pick or create new ones.
+8. **Layout** — `PostLayout` (default, author sidebar), `PostSimple` (minimal), or `PostBanner` (hero image). Briefly explain each.
 
 ### Phase 2: Research and Outline
 
 Before writing:
 
-1. If the topic involves a specific library or framework, use web search to verify current APIs, syntax, and best practices. Do not rely on potentially outdated knowledge.
+1. If the topic involves a specific tool, library, or framework, do thorough research using web search and official docs. Verify current APIs, syntax, configuration options, and the full scope of capabilities. Do not rely on potentially outdated knowledge. Specifically:
+   - Verify the **complete** feature set. If a tool supports 14 platforms, do not write "supports A, B, and C" and miss the rest.
+   - Verify every configuration value, flag, and option you plan to include against official documentation.
+   - Distinguish between what a tool **is capable of** vs what this specific guide **covers**. The intro should reflect the former; the guide body covers the latter.
 2. Check existing blog articles with Glob on `data/blog/**/*.mdx` to maintain consistent voice and avoid duplicate topics.
 3. Create a structured outline and present it to the user for approval before drafting.
 
@@ -52,11 +56,12 @@ date: '<today YYYY-MM-DD>'
 tags: [<tags>]
 draft: true
 summary: '<summary>'
-images: ['/static/images/<slug>/banner.png']
 layout: <layout>
 authors: ['default']
 ---
 ```
+
+Only add `images: ['/static/images/<slug>/banner.png']` to frontmatter if a banner image actually exists. Omit it by default to avoid broken references.
 
 ---
 
@@ -79,6 +84,7 @@ Every article MUST include these sections (adapted to article type):
 
 - **Active voice always.** "The function returns a list" not "A list is returned."
 - **Short sentences.** If a sentence has more than one comma, consider splitting it.
+- **No em dashes.** Use commas or split into separate sentences instead of em dashes (--).
 - **Lead with the conclusion.** State the answer or result first, then explain why. Write like a journalist, not a professor.
 - **Cut filler ruthlessly:**
   - "In order to" → "to"
@@ -100,6 +106,7 @@ Every article MUST include these sections (adapted to article type):
 - **Show the output.** After code that produces output, show what the reader should expect to see.
 - **Keep examples minimal.** Strip out everything not relevant to the point being made. Use a starter repo for complex setups.
 - **Mark file paths.** When showing code that goes in a specific file, always indicate the filename above the code block.
+- **Nested code fences in MDX.** If a code block contains triple backticks (e.g., showing a heredoc or a file that itself has code fences), use 4 backticks (``````) for the outer fence. MDX will break silently with nested triple backticks.
 
 ### Visual Checkpoints
 
@@ -126,7 +133,7 @@ Apply these differentiators that separate useful articles from noise:
 ### SEO (Applied Automatically)
 
 - Write the title as a clear H1 that matches what someone would search for
-- Write the summary as a compelling meta description (under 160 characters)
+- Write the summary as 1-2 compelling sentences that describe what the reader gets. Focus on outcomes and capabilities, not implementation details. For example, "Deploy OpenClaw, an open-source AI assistant supporting WhatsApp, Telegram, Discord, Slack, and 10+ other platforms" is better than "Deploy OpenClaw on any VPS using CapRover with Telegram integration."
 - Use H2/H3 headings that could independently answer a search query
 - Naturally include relevant technical terms in headings and opening paragraphs
 - Target specific long-tail queries over broad competitive terms
@@ -187,6 +194,18 @@ This ensures the introduction accurately reflects the content.
 
 ---
 
+## Phase 5: Review and Verify
+
+After writing the article, go back through it and verify:
+
+1. **Every technical claim.** If you wrote "this config option does X," verify against official docs that it actually does X. Do not pass editorial judgment off as documented fact.
+2. **Every config value.** If the article includes configuration (JSON, YAML, env vars), verify each key-value pair is correct and the options used match their documented behavior.
+3. **Intro matches reality.** Does the introduction accurately reflect the full scope of the tool/technology? If a tool supports 14 platforms, do not list only 3.
+4. **Summary matches content.** Does the summary describe what the reader gets? Does it avoid implementation details that belong in the body?
+5. **No unsupported claims.** Flag any statement that reads like fact but is actually an inference or opinion. Either cite a source, reword as opinion, or remove it.
+
+---
+
 ## After Creation
 
 Report to the user:
@@ -194,8 +213,8 @@ Report to the user:
 - URL: `/blog/<slug>`
 - Draft status: `draft: true` (visible in dev only)
 - Preview: `yarn dev` then open `http://localhost:3000/blog/<slug>`
-- Remind about adding `banner.png` to `public/static/images/<slug>/`
 - To publish: change `draft: true` to `draft: false`
+- If images were referenced, remind about adding them to `public/static/images/<slug>/`
 - List any `<!-- SCREENSHOT -->` or `<!-- DIAGRAM -->` placeholders they need to fill
 
 ## Series Support
