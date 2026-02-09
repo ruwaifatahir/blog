@@ -45,12 +45,14 @@ apt update && apt upgrade -y
 curl -fsSL https://get.docker.com | sh
 ```
 
-If UFW is active on your server, open the ports CapRover needs:
+If UFW is active on your server, make sure SSH is allowed:
 
 ```bash
-ufw allow 80,443,3000,996,7946,4789,2377/tcp
-ufw allow 7946,4789,2377/udp
+ufw allow 22/tcp
+ufw enable
 ```
+
+> **Note:** UFW only needs to allow SSH here. Docker-published ports (80, 443, 3000, 18789) bypass UFW automatically, so adding UFW rules for them has no effect. To control access to those ports, use your VPS provider's cloud firewall.
 
 CapRover is a self-hosted PaaS that manages Docker containers through a web dashboard. With Docker installed, run:
 
@@ -58,7 +60,7 @@ CapRover is a self-hosted PaaS that manages Docker containers through a web dash
 docker run -p 80:80 -p 443:443 -p 3000:3000 -e ACCEPTED_TERMS=true -v /var/run/docker.sock:/var/run/docker.sock -v /captain:/captain caprover/caprover
 ```
 
-Wait until you see `Captain is initialized` in the output. Then open `http://SERVER_IP:3000` in your browser and log in with the default password `captain42`.
+Wait until you see `Captain is initialized` in the output. Then open `http://SERVER_IP:3000` in your browser and log in with the default password `captain42`. **Change this password immediately** under the **Settings** section in the dashboard. Port 3000 is open to the internet and the default password is publicly known.
 
 
 ## Step 3: Create the App
@@ -122,7 +124,7 @@ The first directory holds `openclaw.json` (the main configuration file) and cred
 }
 ```
 
-This tells CapRover exactly how to start the OpenClaw process. Without it, the container may fail with "too many arguments for gateway" because CapRover's default entrypoint handling does not match what OpenClaw expects.
+This tells CapRover exactly how to start the OpenClaw process. The `--bind lan` flag makes the gateway listen on all network interfaces so it is reachable from outside the container (the default `loopback` mode only listens inside the container). Without this override, the container may fail with "too many arguments for gateway" because CapRover's default entrypoint handling does not match what OpenClaw expects.
 
 Click **Save & Update** after each change.
 
@@ -178,7 +180,7 @@ Replace `YOUR_TELEGRAM_USER_ID` with the numeric ID you got from @userinfobot. T
 - **`trustedProxies`** tells the gateway which IP ranges to trust for `X-Forwarded-For` headers so it can correctly identify client IPs behind CapRover's nginx proxy. Docker Swarm's default overlay pool is `10.0.0.0/8`, and bridge/ingress networks use the `172.16.0.0/12` range. The [official docs](https://docs.openclaw.ai/gateway/security) recommend being as specific as possible, but since Docker Swarm assigns these IPs dynamically, both ranges are included here to cover CapRover's internal networking.
 - **`dmPolicy: "allowlist"`** means only user IDs listed in `allowFrom` can DM the bot. Everyone else is blocked.
 - **`groupPolicy: "allowlist"`** means the bot will not respond in any Telegram groups unless you explicitly allow them.
-- **`controlUi.allowInsecureAuth`** allows the dashboard to work over plain HTTP. Without this, the Control UI requires HTTPS or localhost access. This is a security trade-off for convenience. If you later set up a domain with HTTPS, you can remove this setting.
+- **`controlUi.allowInsecureAuth`** allows the dashboard to work over plain HTTP. Without this, the Control UI requires HTTPS or localhost access. This is a security trade-off for convenience since the gateway token will be visible in your browser history and server logs. If you later set up a domain with HTTPS, you can remove this setting.
 
 ### Set File Ownership
 
