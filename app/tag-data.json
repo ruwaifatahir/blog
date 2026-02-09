@@ -1,5 +1,6 @@
 {
-  "moltbot": 1,
-  "openclaw": 1,
+  "moltbot": 2,
+  "openclaw": 2,
+  "aws": 1,
   "claude-code": 1
 }
